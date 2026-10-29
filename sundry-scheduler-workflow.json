@@ -1,0 +1,76 @@
+{
+  "name": "Run Sundry Batch Daily at 9PM",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Schedule Trigger (9PM Daily)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { exec } = require('child_process');\nconst util = require('util');\nconst execPromise = util.promisify(exec);\n\nconst batPath = 'C:\\\\laragon\\\\www\\\\ramco-scraper2\\\\run_sundry.bat';\nconst startedAt = new Date().toISOString();\n\n// Open a visible cmd window that runs the batch (like double-clicking it).\n// cmd /k keeps the window open after the batch finishes so you can review output.\n// n8n does not wait for the window to close — it returns immediately after launch.\nconst command = `start \"Sundry Scraper\" cmd /k \"${batPath}\"`;\n\ntry {\n  await execPromise(command, {\n    cwd: 'C:\\\\laragon\\\\www\\\\ramco-scraper2',\n    windowsHide: false\n  });\n  return [{\n    json: {\n      success: true,\n      message: 'Sundry batch launched in a visible cmd window',\n      batPath,\n      startedAt,\n      launchedAt: new Date().toISOString(),\n      note: 'The cmd window shows live output. It stays open (cmd /k) until you close it.'\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      success: false,\n      message: 'Failed to launch batch window',\n      error: error.message,\n      startedAt,\n      finishedAt: new Date().toISOString()\n    }\n  }];\n}"
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f23456789012",
+      "name": "Run Sundry Batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    ...item.json,\n    loggedAt: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-345678901234",
+      "name": "Done - Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (9PM Daily)": {
+      "main": [
+        [
+          {
+            "node": "Run Sundry Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Sundry Batch": {
+      "main": [
+        [
+          {
+            "node": "Done - Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}

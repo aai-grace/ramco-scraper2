@@ -1,0 +1,13 @@
+{
+  "name": "ramco-virtualworks-scraper",
+  "version": "1.0.0",
+  "description": "Playwright scraper for Ramco VirtualWorks",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "playwright": "^1.44.0"
+  }
+}

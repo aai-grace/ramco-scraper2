@@ -1,0 +1,651 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 1
+            }
+          ]
+        }
+      },
+      "id": "e534eb0e-3b61-4390-8b66-9f61e6a1a7cd",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2352,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nconst yyyy = today.getFullYear();\nconst mm = String(today.getMonth() + 1).padStart(2, '0');\nconst dd = String(today.getDate()).padStart(2, '0');\nconst dateFolder = `${yyyy}-${mm}-${dd}`;\n\nreturn [{\n  json: {\n    moduleName: 'Sundry Payment Vouchers',\n    basePath: 'C:\\\\laragon\\\\www\\\\ramco-scraper2\\\\output\\\\Sundry Payment Vouchers',\n    dateFolder,\n    driveRootFolderId: '1a0U8GkkNpVNm0zZ683Jzj3SNvY2B3EQp'\n  }\n}];\n"
+      },
+      "id": "b1cd16a1-0d06-4e51-976c-270dbd9e6e16",
+      "name": "Build Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2144,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst { basePath, driveRootFolderId, moduleName } = $input.first().json;\n\nif (!fs.existsSync(basePath)) {\n  return [{ json: { filePath: '', driveRootFolderId } }];\n}\n\nfunction walk(dir, out = []) {\n  for (const entry of fs.readdirSync(dir)) {\n    const full = path.join(dir, entry);\n    if (fs.statSync(full).isDirectory()) walk(full, out);\n    else out.push(full);\n  }\n  return out;\n}\n\nconst matching = walk(basePath);\n\nif (matching.length === 0) {\n  return [{ json: { filePath: '', driveRootFolderId } }];\n}\n\nreturn matching.map(filePath => {\n  const rel = filePath.substring(basePath.length).replace(/^[\\\\/]+/, '');\n  const parts = rel.split(path.sep);\n  const fileName = parts.pop();\n  const segments = [moduleName, ...parts];\n  return {\n    json: {\n      filePath,\n      fileName,\n      relativeFolderSegments: segments,\n      relativeFolderPath: segments.join('/'),\n      driveRootFolderId\n    }\n  };\n});\n"
+      },
+      "id": "43d164d0-c489-436b-824b-3c13c08fdd21",
+      "name": "List All Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1952,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-has",
+              "leftValue": "={{ $json.filePath }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6b11a8f6-c08d-4344-a08d-715738475833",
+      "name": "Has Files?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { message: \"No files found in Sundry Payment Vouchers.\", timestamp: new Date().toISOString() } }];"
+      },
+      "id": "1ed4584c-e2fe-4d74-a987-fd1f018664ac",
+      "name": "No Files - Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst sd = $getWorkflowStaticData('global');\nsd.folderMap = {};\nsd.filesThisRun = items.map(i => i.json);\n\nconst driveRootFolderId = items[0].json.driveRootFolderId;\nconst paths = new Set();\nfor (const it of items) {\n  const segs = it.json.relativeFolderSegments || [];\n  for (let i = 1; i <= segs.length; i++) paths.add(segs.slice(0, i).join('/'));\n}\nconst sorted = [...paths].sort((a, b) => a.split('/').length - b.split('/').length);\n\nreturn sorted.map(relPath => {\n  const segs = relPath.split('/');\n  return {\n    json: {\n      relativeFolderPath: relPath,\n      folderName: segs[segs.length - 1],\n      parentRelativeFolderPath: segs.slice(0, -1).join('/'),\n      driveRootFolderId\n    }\n  };\n});\n"
+      },
+      "id": "5785252c-587a-42b0-843d-0a4924ba01a9",
+      "name": "Extract Unique Folders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "be834db9-c172-44ea-bacc-426844649979",
+      "name": "Folders Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1344,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nsd.folderMap = sd.folderMap || {};\nconst item = $input.first().json;\nconst parentId = item.parentRelativeFolderPath\n  ? sd.folderMap[item.parentRelativeFolderPath]\n  : item.driveRootFolderId;\nreturn [{ json: { ...item, parentId } }];\n"
+      },
+      "id": "3cab604a-15bb-4dac-b173-26d8fd95a81d",
+      "name": "Resolve Parent ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=name = '{{ $json.folderName.replace(/'/g, \"\\\\'\") }}' and '{{ $json.parentId }}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            },
+            {
+              "name": "fields",
+              "value": "files(id,name)"
+            },
+            {
+              "name": "supportsAllDrives",
+              "value": "true"
+            },
+            {
+              "name": "includeItemsFromAllDrives",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "59b40308-9454-44d6-b1f7-45327e819551",
+      "name": "Search Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -944,
+        -144
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FiXSk1DXF8EQBD2W",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-exists",
+              "leftValue": "={{ ($json.files || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0144d238-4b4a-4039-a9fe-c8c54dc03a13",
+      "name": "Folder Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst ctx = $('Resolve Parent ID').item.json;\nreturn [{ json: { ...ctx, folderId: resp.files[0].id } }];"
+      },
+      "id": "9f6dce4d-98d4-422f-b35a-f76407a3fbd2",
+      "name": "Get Existing Folder ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $('Resolve Parent ID').item.json.folderName, mimeType: 'application/vnd.google-apps.folder', parents: [$('Resolve Parent ID').item.json.parentId] } }}",
+        "options": {}
+      },
+      "id": "27a9e7ff-2e72-440f-a55e-73ddd578b0de",
+      "name": "Create Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -544,
+        -16
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FiXSk1DXF8EQBD2W",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst ctx = $('Resolve Parent ID').item.json;\nreturn [{ json: { ...ctx, folderId: resp.id } }];"
+      },
+      "id": "5f02851c-d510-495d-ad75-27004e173dea",
+      "name": "Extract Created Folder ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nsd.folderMap = sd.folderMap || {};\nconst { relativeFolderPath, folderId } = $input.first().json;\nsd.folderMap[relativeFolderPath] = folderId;\nreturn [{ json: { relativeFolderPath, folderId } }];\n"
+      },
+      "id": "a5f80ace-23e5-457f-bcfd-0ae6fd90b291",
+      "name": "Save Folder ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nconst files = sd.filesThisRun || [];\nconst map = sd.folderMap || {};\n\nreturn files.map(f => ({\n  json: {\n    ...f,\n    driveFolderId: map[f.relativeFolderPath] || f.driveRootFolderId\n  }\n}));\n"
+      },
+      "id": "fd5c0f50-a9cc-4967-b95f-0d6229786fd7",
+      "name": "Emit Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=name = '{{ $json.fileName.replace(/'/g, \"\\\\'\") }}' and '{{ $json.driveFolderId }}' in parents and trashed = false"
+            },
+            {
+              "name": "fields",
+              "value": "files(id,name)"
+            },
+            {
+              "name": "supportsAllDrives",
+              "value": "true"
+            },
+            {
+              "name": "includeItemsFromAllDrives",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1111111-1111-1111-1111-111111111111",
+      "name": "Search File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        96
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FiXSk1DXF8EQBD2W",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-file-exists",
+              "leftValue": "={{ ($json.files || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c2222222-2222-2222-2222-222222222222",
+      "name": "File Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('Emit Files').item.json.filePath }}",
+        "options": {}
+      },
+      "id": "80c7ff7d-e414-4d0e-bacc-7d1011f4be3c",
+      "name": "Read File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -624,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "name": "={{ $('Emit Files').item.json.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Emit Files').item.json.driveFolderId }}",
+          "mode": "id"
+        },
+        "options": {
+          "simplifyOutput": true
+        }
+      },
+      "id": "b919c60f-677e-401d-9e3d-a39a5e2b4882",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -432,
+        176
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FiXSk1DXF8EQBD2W",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const uploaded = $input.all().map(i => i.json);\nreturn [{ json: { message: `Uploaded ${uploaded.length} new file(s) to Google Drive. Existing files skipped.`, files: uploaded, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "4f6ca47d-95d0-4d3e-b1af-d4b33344e061",
+      "name": "Done - Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        176
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Config": {
+      "main": [
+        [
+          {
+            "node": "List All Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List All Files": {
+      "main": [
+        [
+          {
+            "node": "Has Files?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Files?": {
+      "main": [
+        [
+          {
+            "node": "Extract Unique Folders",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Files - Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Unique Folders": {
+      "main": [
+        [
+          {
+            "node": "Folders Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Folders Loop": {
+      "main": [
+        [
+          {
+            "node": "Emit Files",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolve Parent ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Parent ID": {
+      "main": [
+        [
+          {
+            "node": "Search Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Folder": {
+      "main": [
+        [
+          {
+            "node": "Folder Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Folder Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Save Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Folder": {
+      "main": [
+        [
+          {
+            "node": "Extract Created Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Created Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Save Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Folders Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Files": {
+      "main": [
+        [
+          {
+            "node": "Search File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search File": {
+      "main": [
+        [
+          {
+            "node": "File Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Exists?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Read File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read File": {
+      "main": [
+        [
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Done - Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e00182d11dba4fe10574a8372031f8137b6e24acf3cb7eb75e7315586d7a6a32"
+  }
+}

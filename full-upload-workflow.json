@@ -1,0 +1,513 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 1
+            }
+          ]
+        }
+      },
+      "id": "21618042-6405-4c35-bf11-5e54610a08d6",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1264,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nconst yyyy = today.getFullYear();\nconst mm = String(today.getMonth() + 1).padStart(2, '0');\nconst dd = String(today.getDate()).padStart(2, '0');\nconst dateFolder = `${yyyy}-${mm}-${dd}`;\n\nconst driveRootFolderId = '1a0U8GkkNpVNm0zZ683Jzj3SNvY2B3EQp';\nconst baseDir = 'C:\\\\laragon\\\\www\\\\ramco-scraper2\\\\output';\n\nconst modules = [\n  'Sundry Payment Vouchers',\n  'Supplier Debit Credit Notes',\n  'Supplier Order Based Invoices',\n  'Supplier Prepayment Invoices',\n  'Supplier Payment Vouchers (CDV)',\n  'Journal Vouchers',\n  'Purchase Requests',\n  'Purchase Orders',\n  'Goods Receipts',\n  'Customer Receipts',\n  'Customer Debit Credit Notes',\n  'Sundry Receipts'\n];\n\nreturn modules.map(moduleName => ({\n  json: {\n    moduleName,\n    basePath: `${baseDir}\\\\${moduleName}`,\n    dateFolder,\n    driveRootFolderId\n  }\n}));\n"
+      },
+      "id": "5aedd57f-acdb-40a4-b13a-674e6ae78313",
+      "name": "Build Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nfunction walk(dir, out = []) {\n  for (const entry of fs.readdirSync(dir)) {\n    const full = path.join(dir, entry);\n    if (fs.statSync(full).isDirectory()) walk(full, out);\n    else out.push(full);\n  }\n  return out;\n}\n\nconst results = [];\nlet driveRootFolderId = '';\n\nfor (const item of $input.all()) {\n  const { basePath, moduleName } = item.json;\n  driveRootFolderId = item.json.driveRootFolderId;\n\n  if (!fs.existsSync(basePath)) continue;\n\n  for (const filePath of walk(basePath)) {\n    const rel = filePath.substring(basePath.length).replace(/^[\\\\/]+/, '');\n    const parts = rel.split(path.sep);\n    const fileName = parts.pop();\n    const segments = [moduleName, ...parts];\n    results.push({\n      json: {\n        filePath,\n        fileName,\n        moduleName,\n        relativeFolderSegments: segments,\n        relativeFolderPath: segments.join('/'),\n        driveRootFolderId\n      }\n    });\n  }\n}\n\nif (results.length === 0) {\n  return [{ json: { filePath: '', driveRootFolderId } }];\n}\n\nreturn results;"
+      },
+      "id": "79018402-bf0e-41ae-9e64-3c1296c8a671",
+      "name": "List All Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-has",
+              "leftValue": "={{ $json.filePath }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d836a09a-2618-4586-830a-25f597daa5e9",
+      "name": "Has Files?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { message: \"No files found in any module folder.\", timestamp: new Date().toISOString() } }];"
+      },
+      "id": "7415c815-6be7-4586-9136-02eeffda4f6e",
+      "name": "No Files - Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst sd = $getWorkflowStaticData('global');\nsd.folderMap = {};\nsd.filesThisRun = items.map(i => i.json);\n\nconst driveRootFolderId = items[0].json.driveRootFolderId;\nconst paths = new Set();\nfor (const it of items) {\n  const segs = it.json.relativeFolderSegments || [];\n  for (let i = 1; i <= segs.length; i++) paths.add(segs.slice(0, i).join('/'));\n}\nconst sorted = [...paths].sort((a, b) => a.split('/').length - b.split('/').length);\n\nreturn sorted.map(relPath => {\n  const segs = relPath.split('/');\n  return {\n    json: {\n      relativeFolderPath: relPath,\n      folderName: segs[segs.length - 1],\n      parentRelativeFolderPath: segs.slice(0, -1).join('/'),\n      driveRootFolderId\n    }\n  };\n});\n"
+      },
+      "id": "96fc7cad-369e-49e7-804a-bdb518ccbb59",
+      "name": "Extract Unique Folders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "32f5fc9b-9148-4f3f-b89b-1e5f15de27ac",
+      "name": "Folders Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -256,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nsd.folderMap = sd.folderMap || {};\nconst item = $input.first().json;\nconst parentId = item.parentRelativeFolderPath\n  ? sd.folderMap[item.parentRelativeFolderPath]\n  : item.driveRootFolderId;\nreturn [{ json: { ...item, parentId } }];\n"
+      },
+      "id": "d20ca6b3-0de2-4405-aeb6-7cffcecdefe5",
+      "name": "Resolve Parent ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=name = '{{ $json.folderName.replace(/'/g, \"\\\\'\") }}' and '{{ $json.parentId }}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            },
+            {
+              "name": "fields",
+              "value": "files(id,name)"
+            },
+            {
+              "name": "supportsAllDrives",
+              "value": "true"
+            },
+            {
+              "name": "includeItemsFromAllDrives",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ccc22c73-8905-4974-a6f8-7bada643a157",
+      "name": "Search Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        208,
+        336
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "xgs5n2VCNGEcmxQH",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-exists",
+              "leftValue": "={{ ($json.files || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "262fd26e-023c-4c18-b6a3-dcfb3fdbce36",
+      "name": "Folder Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst ctx = $('Resolve Parent ID').item.json;\nreturn [{ json: { ...ctx, folderId: resp.files[0].id } }];"
+      },
+      "id": "d4f529ad-59cb-4798-bbc5-11107f543944",
+      "name": "Get Existing Folder ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $('Resolve Parent ID').item.json.folderName, mimeType: 'application/vnd.google-apps.folder', parents: [$('Resolve Parent ID').item.json.parentId] } }}",
+        "options": {}
+      },
+      "id": "747fa73d-85a0-429f-8695-3b4d5b9ce678",
+      "name": "Create Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        608,
+        464
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "xgs5n2VCNGEcmxQH",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst ctx = $('Resolve Parent ID').item.json;\nreturn [{ json: { ...ctx, folderId: resp.id } }];"
+      },
+      "id": "3e5ecbad-9406-4eb9-b769-f4e7b1267bcd",
+      "name": "Extract Created Folder ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nsd.folderMap = sd.folderMap || {};\nconst { relativeFolderPath, folderId } = $input.first().json;\nsd.folderMap[relativeFolderPath] = folderId;\nreturn [{ json: { relativeFolderPath, folderId } }];\n"
+      },
+      "id": "8dae2e15-cc95-4c14-95ab-4eb04f842f92",
+      "name": "Save Folder ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\nconst files = sd.filesThisRun || [];\nconst map = sd.folderMap || {};\n\nreturn files.map(f => ({\n  json: {\n    ...f,\n    driveFolderId: map[f.relativeFolderPath] || f.driveRootFolderId\n  }\n}));\n"
+      },
+      "id": "f03a27d7-0966-455e-bf86-e67a44f75359",
+      "name": "Emit Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Parallel Upload (bulk-dedup) ===\n// Designed for large batches (10K+ files).\n// Phase 1: list each unique destination folder ONCE in parallel  -> builds folderId -> Set<fileName>\n// Phase 2: filter to only files that don't already exist on Drive\n// Phase 3: upload the remaining files concurrently (Promise.all worker pool)\n// Uses your existing 'googleDriveOAuth2Api' credential.\n//\n// IMPORTANT: with 10K+ files, n8n's task-runner timeout (default 300s) may need to be raised.\n// Add to your n8n environment:  N8N_RUNNERS_TASK_TIMEOUT=3600\n\nconst ctx = this;\nconst fs = require('fs').promises;\n\n// ---- tuning knobs ----\nconst UPLOAD_CONCURRENCY = 10;   // parallel upload slots (Drive user quota ~ keep <= 10-12)\nconst LIST_CONCURRENCY   = 16;   // parallel folder-list slots (cheap reads)\nconst SKIP_IF_EXISTS     = true; // false = always upload (creates duplicates)\nconst LIST_PAGE_SIZE     = 1000;\n// ----------------------\n\nconst items = $input.all().map(i => i.json).filter(f => f && f.filePath);\n\nasync function withRetry(fn, attempts = 4, baseDelayMs = 800) {\n  let lastErr;\n  for (let i = 0; i < attempts; i++) {\n    try { return await fn(); }\n    catch (e) {\n      lastErr = e;\n      if (i < attempts - 1) await new Promise(r => setTimeout(r, baseDelayMs * Math.pow(2, i)));\n    }\n  }\n  throw lastErr;\n}\n\nasync function runPool(arr, limit, worker) {\n  const out = new Array(arr.length);\n  let cursor = 0;\n  const runOne = async () => {\n    while (true) {\n      const i = cursor++;\n      if (i >= arr.length) return;\n      try { out[i] = await worker(arr[i], i); }\n      catch (e) { out[i] = { __err: e.message || String(e) }; }\n    }\n  };\n  await Promise.all(Array.from({ length: limit }, runOne));\n  return out;\n}\n\n// ---- Phase 1: bulk listing ----\nasync function listFolderNames(folderId) {\n  const names = new Set();\n  let pageToken;\n  do {\n    const qs = {\n      q: `'${folderId}' in parents and trashed = false`,\n      fields: 'nextPageToken,files(name)',\n      pageSize: String(LIST_PAGE_SIZE),\n      supportsAllDrives: 'true',\n      includeItemsFromAllDrives: 'true'\n    };\n    if (pageToken) qs.pageToken = pageToken;\n    const res = await withRetry(() =>\n      ctx.helpers.httpRequestWithAuthentication.call(ctx, 'googleDriveOAuth2Api', {\n        method: 'GET',\n        url: 'https://www.googleapis.com/drive/v3/files',\n        qs,\n        json: true\n      })\n    );\n    for (const f of res.files || []) names.add(f.name);\n    pageToken = res.nextPageToken;\n  } while (pageToken);\n  return { folderId, names };\n}\n\nconst tStart = Date.now();\n\nlet existingByFolder = new Map();\nlet listErrors = 0;\nif (SKIP_IF_EXISTS && items.length) {\n  const folderIds = [...new Set(items.map(f => f.driveFolderId || f.driveRootFolderId))];\n  const listed = await runPool(folderIds, LIST_CONCURRENCY, listFolderNames);\n  for (const r of listed) {\n    if (r && r.folderId) existingByFolder.set(r.folderId, r.names);\n    else listErrors++;\n  }\n}\nconst tListed = Date.now();\n\n// ---- Phase 2: filter ----\nconst toUpload = SKIP_IF_EXISTS\n  ? items.filter(f => {\n      const fid = f.driveFolderId || f.driveRootFolderId;\n      const existing = existingByFolder.get(fid);\n      return !(existing && existing.has(f.fileName));\n    })\n  : items.slice();\n\nconst skippedCount = items.length - toUpload.length;\n\n// ---- Phase 3: upload ----\nasync function uploadMultipart(filePath, name, parentId) {\n  const buffer = await fs.readFile(filePath);\n  const boundary = '----n8n_' + Math.random().toString(36).slice(2);\n  const CRLF = '\\r\\n';\n  const meta = JSON.stringify({ name, parents: [parentId] });\n  const body = Buffer.concat([\n    Buffer.from(`--${boundary}${CRLF}Content-Type: application/json; charset=UTF-8${CRLF}${CRLF}${meta}${CRLF}`),\n    Buffer.from(`--${boundary}${CRLF}Content-Type: application/octet-stream${CRLF}${CRLF}`),\n    buffer,\n    Buffer.from(`${CRLF}--${boundary}--${CRLF}`)\n  ]);\n  const res = await withRetry(() =>\n    ctx.helpers.httpRequestWithAuthentication.call(ctx, 'googleDriveOAuth2Api', {\n      method: 'POST',\n      url: 'https://www.googleapis.com/upload/drive/v3/files',\n      qs: { uploadType: 'multipart', supportsAllDrives: 'true' },\n      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },\n      body,\n      json: false\n    })\n  );\n  return typeof res === 'string' ? JSON.parse(res) : res;\n}\n\nasync function uploadOne(file) {\n  const folderId = file.driveFolderId || file.driveRootFolderId;\n  try {\n    const r = await uploadMultipart(file.filePath, file.fileName, folderId);\n    return { fileName: file.fileName, module: file.moduleName, status: 'uploaded', id: r.id };\n  } catch (e) {\n    return { fileName: file.fileName, module: file.moduleName, status: 'failed', error: e.message || String(e) };\n  }\n}\n\nconst uploadResults = toUpload.length ? await runPool(toUpload, UPLOAD_CONCURRENCY, uploadOne) : [];\nconst tDone = Date.now();\n\nconst uploaded = uploadResults.filter(r => r && r.status === 'uploaded').length;\nconst failed   = uploadResults.filter(r => r && r.status === 'failed');\n\nreturn [{\n  json: {\n    total: items.length,\n    uploaded,\n    skipped: skippedCount,\n    failed: failed.length,\n    listErrors,\n    listMs: tListed - tStart,\n    uploadMs: tDone - tListed,\n    totalMs: tDone - tStart,\n    failures: failed\n  }\n}];"
+      },
+      "id": "parallel-upload-001",
+      "name": "Parallel Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst secs = (ms) => (ms / 1000).toFixed(1) + 's';\nreturn [{\n  json: {\n    message: `Uploaded ${r.uploaded}, skipped ${r.skipped} (already on Drive), failed ${r.failed}. List ${secs(r.listMs || 0)} + Upload ${secs(r.uploadMs || 0)} = ${secs(r.totalMs || 0)}.`,\n    total: r.total,\n    uploaded: r.uploaded,\n    skipped: r.skipped,\n    failed: r.failed,\n    listMs: r.listMs,\n    uploadMs: r.uploadMs,\n    totalMs: r.totalMs,\n    failures: r.failures || [],\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "53d1bfb1-3b6f-4784-9457-26056a13f532",
+      "name": "Done - Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Config": {
+      "main": [
+        [
+          {
+            "node": "List All Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List All Files": {
+      "main": [
+        [
+          {
+            "node": "Has Files?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Files?": {
+      "main": [
+        [
+          {
+            "node": "Extract Unique Folders",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Files - Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Unique Folders": {
+      "main": [
+        [
+          {
+            "node": "Folders Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Folders Loop": {
+      "main": [
+        [
+          {
+            "node": "Emit Files",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolve Parent ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Parent ID": {
+      "main": [
+        [
+          {
+            "node": "Search Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Folder": {
+      "main": [
+        [
+          {
+            "node": "Folder Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Folder Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Save Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Folder": {
+      "main": [
+        [
+          {
+            "node": "Extract Created Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Created Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Save Folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Folder ID": {
+      "main": [
+        [
+          {
+            "node": "Folders Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Files": {
+      "main": [
+        [
+          {
+            "node": "Parallel Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parallel Upload": {
+      "main": [
+        [
+          {
+            "node": "Done - Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fe12b6584a78b8b27e98687321d4603e445509f6491979b66f32369c6ee5a7f7"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"where npm & where node & dir \\\\\"%APPDATA%\\\\\\\\npm\\\\\" 2>nul | head -20\")"
+    ]
+  }
+}
